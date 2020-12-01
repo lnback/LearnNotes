@@ -43,3 +43,85 @@ type Person struct{
 Protobuf作为Google开源的一种数据协议，还有很多种的语言版本。在Google官方发布的Protobuf的源代码中包含了C++、Java、Python三种语言。
 
 ### 缺点
+
+#### 可读性较差
+为了提高性能，Protobuf采用了二进制格式进行编码。二进制格式编码对开发者来说是没办法进行阅读的。在进行程序调试的时候，比较困难。
+
+#### 缺乏自描述
+比如XML语言是一种自描述的标记语言，即字段标记的同时就表达了内容对应的含义。而Protobuf不是一种自描述语言，开发者对于二进制格式的Protobuf，没有办法知道所对应的真实的数据结构，在使用Protobuf协议传输时，**必须配备对应的proto配置文件。**
+
+## Protobuf协议语法
+### Protobuf的协议的格式
+Protobuf协议规定：使用该协议进行序列化和反序列化操作时，首先定义传输数据的格式，并命名以".proto"为扩展名定义消息定义文件
+### Message定义一个消息
+例如：
+```protobuf
+message Order{
+    required string order_id = 1;
+    repeated int64 num = 2;
+    optional int32 timestamp = 3;
+}
+```
+- **指定字段类型：** 在proto协议中，字段的类型包括字符串(string)、整形(int32、int64)、枚举(enum)等类型
+- **分配标识符：** 在消息字段中，每个字段都有一个唯一的标识符。最小的标识号可以从1开始，最大到536870911。不可以使用其中的[19000-19999]的标识号，Protobuf协议实现中对这些进行了预留。如果非要在.proto文件中使用这些预留标识号，编译时就会报警。
+- **指定字段规则：** 字段的修饰符包含三种类型，分别是
+    -   **required：** 表示该值是必须要设置的。
+    -   **optional：** 消息格式中该字段可以有0个或1个值（不超过1个）
+    -   **repeated：** 表示该值可以重复，相当于Go中的slice。
+
+## 使用Protobuf的步骤
+### 创建
+创建扩展名为.proto的文件，并编写代码。比如创建person.proto文件，内容如下
+```protobuf
+syntax = "proto2" // 协议版本
+package example
+message Person{
+    required string Name = 1;
+    required int32 Age = 2;
+    required string From = 3;
+}
+```
+### 编译
+编译.proto文件，生成Go语言文件。执行如下命令：
+```protobuf
+protoc --go_out =生成路径 文件路径
+```
+### 使用
+```go
+package main
+
+import (
+	"beegodemo/proto"
+	"fmt"
+	proto2 "github.com/golang/protobuf/proto"
+	"log"
+)
+
+func main() {
+	student := &proto.Student{
+		Name: "lly",
+		Age: 12,
+	}
+	data,err := proto2.Marshal(student)
+
+	if err != nil{
+		log.Fatal(err)
+
+	}
+
+	stu := &proto.Student{}
+	err = proto2.Unmarshal(data,stu)
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Println(stu)
+
+}
+```
+### 执行
+```go
+go build -o hello.exe
+hello.exe
+```
