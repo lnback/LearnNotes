@@ -133,6 +133,64 @@ var class_to_size = [_NumSizeClasses]uint16{0, 8, 16, 32, 48, 64, 80, 96, 112, 1
 newcap = int(capmem /ptrSize) // 6
 ```
 ### Map
+#### 底层数据结构
+Map主要由两部分构成
+存放map信息的hmap
+```go
+type hmap struct{
+    count int //当前哈希表中的元素数量
+    flags uint8 //并发读写标志
+    B uint8 //buckets数组的长度的对数，也就是说buckets数组的长度就是2^B
+    noverflow uint16 //溢出桶数量
+    hash0 uint32 //哈希种子
+    
+    buckets unsafe.Pointer //是一个指针，指向一个bmap
+    oldbuckets unsafe.Pointer //在哈希扩容时用于保存之前buckets的字段，它的大小是当前buckets的一般
+    
+    nevacuate uintptr
+
+    extra *mapextra
+}
+```
+存放数据的bucket（哈希桶）
+```go
+type bmap struct{
+    tophash [bucketCnt]uint8
+}
+
+// 编译期间会给它创建一个新的结构：
+type bmap struct{
+    topbits [8]uint8
+    keys [8]keytype
+    values [8]valuetype
+    pad uintptr
+    overflow uintptr
+}
+```
+bmap是存放k-v的地方，bmap的内部组成不是按照key/value/key/value/.../key/value这样把key/value对应起来的，这样存储的话要内存对齐很多次。如果是这样key/key/.../value/value这样存放的，只需要在最后内存对齐。
+#### 赋值
+
+#### 扩容
+golang的扩容分为两个类型：
+- overflow bucket太多
+
+这种类型的扩容只会等量扩容，因为是overflow bucket太多，导致有很多空间没有利用起来。
+- 负载因子大于6.5
+
+这种类型的扩容会直接扩容两倍，把原来的B+1，申请一个$2^{B+1}$的新buckets。
+
+#### 迁移
+迁移的目的就是将老的buckets搬迁到新的buckets。
+
+Go map 的扩容采取了一种称为“渐进式”地方式，原有的 key 并不会一次性搬迁完毕，每次最多只会搬迁 2 个 bucket。
+- 第一个类型：overflow buckets太多，由于buckets数量不变，因此可以按序号来迁移，比如原来在0号buckets，到了新的地方后还是0号buckets。
+- 第二个类型：需要重新计算key的哈希，才能决定它落在哪个bucket。例如原来B=5，计算出key的哈希后只用看他的低5位。扩容后，B=6，因此需要多看一位，它的低6位决定key落在哪个bucket。
+
+#### 其他
+- Map不是一个线程安全的数据结构，可以使用sync.Map
+- Map不能边遍历边删除
+- 不能对map的key或value进行取址
+- Map的key是无序的
 ## 并发编程
 ### sync.Mutex
 ### sync.RWMutex
@@ -324,6 +382,7 @@ func main()  {
 ### 通过通信实现
 ## channel、goroutine
 ### channel
+#### 特性
 channel中的特性：
 - 给一个空channel发送数据，造成永远阻塞
 - 从一个空channel接收数据，造成永远阻塞
@@ -332,6 +391,41 @@ channel中的特性：
 - 无缓冲的channel是同步的，而有缓冲的channel是非同步的
 
 读写空阻塞，读关闭零值，写关闭错误。
-### goroutine
+#### 底层结构
+```go
+type hchan struct {
+    // chan 里元素数量
+    qcount   uint
+    // chan 底层循环数组的长度
+    dataqsiz uint
+    // 指向底层循环数组的指针
+    // 只针对有缓冲的 channel
+    buf      unsafe.Pointer
+    // chan 中元素大小
+    elemsize uint16
+    // chan 是否被关闭的标志
+    closed   uint32
+    // chan 中元素类型
+    elemtype *_type // element type
+    // 已发送元素在循环数组中的索引
+    sendx    uint   // send index
+    // 已接收元素在循环数组中的索引
+    recvx    uint   // receive index
+    // 等待接收的 goroutine 队列
+    recvq    waitq  // list of recv waiters
+    // 等待发送的 goroutine 队列
+    sendq    waitq  // list of send waiters
+
+    // 保护 hchan 中所有字段
+    lock mutex
+}
+```
+`buf`指向底层循环数组，只有缓冲型的channel才有。
+`sendx`、`recvx`均指向底层循环数组，表示当前可以发送和接收的元素位置索引值（相对于底层数组）。
+`sendq`、`recvq`分别表示被阻塞的goroutine，这些goroutine由于尝试读取channel或向channel发送数据而被阻塞。
+
+创建一个容量为6的缓冲channel：
+![](https://cdn.jsdelivr.net/gh/lnback/imgbed/img/20210301163818.png)
+
 
 ## 反射
